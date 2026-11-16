@@ -4,7 +4,8 @@ A handheld instant camera for **every aircraft in DCS World** – in VR and on a
 Raise the camera, aim it with the mouse, zoom, take the shot and watch the print slide out and develop,
 complete with handwritten notes on where and when it was taken.
 
-Inspired by Heatblur's instant camera in the F-14. This is an independent mod and contains no Heatblur code or assets.
+
+This is an independent mod and contains no Heatblur code or assets.
 
 | The camera | A saved print | Flat screen |
 |---|---|---|
