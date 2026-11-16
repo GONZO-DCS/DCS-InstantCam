@@ -5,7 +5,7 @@ Raise the camera, aim it with the mouse, zoom, take the shot and watch the print
 complete with handwritten notes on where and when it was taken.
 
 
-This is an independent mod and contains no Heatblur code or assets.
+This is an independent mod and contains no one else code or assets.
 
 | The camera | A saved print | Flat screen |
 |---|---|---|
