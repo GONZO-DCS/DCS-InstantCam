@@ -68,7 +68,7 @@ The installer is written to `dist/`. GitHub Actions builds it on every push and 
 
 ## Credits
 - Handwriting font: *Shadows Into Light* by Kimberly Geswein (SIL Open Font License)
-- Inspiration: Heatblur Simulations' F-14 instant camera
+
 
 ## License
 MIT – see [LICENSE](LICENSE).
