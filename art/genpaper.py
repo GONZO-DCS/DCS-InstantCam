@@ -1,7 +1,7 @@
 """paper.png - worn instant-film card (88 x 107 mm, 79 x 79 mm window) at photo size 1024."""
 import numpy as np
 from PIL import Image, ImageFilter
-SIZE = 1024
+SIZE = 1536
 W, H = round(SIZE * 88 / 79), round(SIZE * 107 / 79)
 rng = np.random.default_rng(11)
 
@@ -19,17 +19,17 @@ img += (rng.normal(0, 2.2, (H, W)))[..., None]                   # grain
 yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 # darker, slightly yellowed worn edges
 edge = np.minimum.reduce([xx, yy, W - 1 - xx, H - 1 - yy])
-wear = np.clip(1 - edge / 28, 0, 1) ** 2 * (0.6 + 0.4 * smooth_noise(12, 3))
+wear = np.clip(1 - edge / 42, 0, 1) ** 2 * (0.6 + 0.4 * smooth_noise(12, 3))
 img -= (wear * 38)[..., None] * np.array([1.0, 1.05, 1.25])
 # chipped edge specks
-chips = (smooth_noise(3, 4) > 0.82) & (edge < 10)
+chips = (smooth_noise(3, 4) > 0.82) & (edge < 15)
 img[chips] -= 45
 # grey grime smudges (a few soft blotches)
 for i in range(7):
     cx, cy = rng.uniform(0, W), rng.uniform(0, H)
     if i < 2:  # one near the bottom of the image window like a thumb mark
         cx, cy = rng.uniform(W * 0.35, W * 0.65), SIZE * 85 / 79 + rng.uniform(-10, 25)
-    rx, ry = rng.uniform(25, 90), rng.uniform(10, 40)
+    rx, ry = rng.uniform(38, 135), rng.uniform(15, 60)
     d = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
     m = np.clip(1 - d, 0, 1) ** 1.5 * smooth_noise(5, 10 + i)
     img -= (m * rng.uniform(25, 55))[..., None]

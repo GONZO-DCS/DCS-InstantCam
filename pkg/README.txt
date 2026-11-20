@@ -1,4 +1,4 @@
-DCS INSTANT CAM v1.3
+DCS INSTANT CAM v1.4
 A handheld instant camera for DCS World, in VR and on a flat screen, for every aircraft.
 =====================================================================
 
@@ -45,6 +45,22 @@ FILM PACKS
   When it blinks 0 the pack is empty: lower and raise the camera to load a
   new one. Set FilmPack=0 in InstantCam.ini for unlimited shots.
 
+TRAY MENU
+  DCS Instant Cam starts with Windows and sits in the tray (camera icon by
+  the clock). Right-click it to:
+  - open the photos folder or the caption editor
+  - set your note for new photos (e.g. CAW UK)
+  - switch follow-aim, film packs, the extra caption line and the sound
+  - choose the photo resolution (1024 / 1536 / 2048)
+  - turn "Start with Windows" on or off
+  Changes apply in DCS within a couple of seconds, no restart needed.
+
+EDITING CAPTIONS AFTER THE MISSION
+  Tray menu > Edit photo captions (or double-click the tray icon).
+  Pick a photo, change the handwritten lines, watch the preview, Save.
+  Only the handwriting is rewritten; the picture is never changed.
+  Photos taken before v1.4 have no stored caption - just type new lines.
+
 WHERE THE PHOTOS GO
   Saved Games\InstantCam\Photos\IC_<date>_<time>.png   - every photo
   Saved Games\InstantCam\Latest.png                    - always the newest one
@@ -59,7 +75,8 @@ PHOTOS AND CAPTIONS
   highlights, grain) on a worn paper card, with handwritten notes:
     Near Banak - 31 Mar 2004, 07:47
     Pilot Gonzo | FA-18C hornet | your own note
-  - The place is the nearest town on the map (or "34 nm NE of Banak").
+  - The place is the nearest airfield on the map ("Near Incirlik", or
+    "34 nm NE of Incirlik" when you're further away).
   - Date and time are the mission's, not your PC clock.
   - Add your own note with Caption= in InstantCam.ini.
   - CaptionDetails=1 adds a line with altitude, speed and heading.
@@ -73,7 +90,8 @@ GOOD TO KNOW
     static if you aim it somewhere you are not looking.
   - Flat screen: photos are taken from the screen, so anything shown on it
     (labels, messages, kneeboard) can appear in the photo.
-  - Zoom is digital: the further you zoom, the softer the photo.
+  - Zoom is digital: the camera can only use the detail DCS renders in
+    your view, so at 150-200 mm photos get softer. 24-85 mm is sharpest.
   - The camera and the print never appear in your photos.
   - Client side only: nothing is needed on the server, and other pilots
     don't need it.

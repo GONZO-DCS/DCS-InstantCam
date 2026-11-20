@@ -39,8 +39,9 @@
 #include <vector>
 
 #include "shader_src.h"
+#include "compose.h"
 
-#define IC_VERSION "1.3.0"
+#define IC_VERSION "1.4.0"
 #define LAYER_NAME "XR_APILAYER_NOVENDOR_instantcam"
 
 // ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ struct Config
     int filmPack = 10;          // shots per film pack, 0 = unlimited
     int captionDetails = 0;     // 1 = add altitude / speed / heading line
     int flatFollow = 1;         // flat screen: 1 = camera follows the aim, 0 = fixed in the corner
-    int photoSize = 1024;
+    int photoSize = 1536;
     int sound = 1;
     int telemetryPort = 47811;
     int keyRaise = 0, keyShutter = 0, keyZoomIn = 0, keyZoomOut = 0, keyRecenter = 0;
@@ -168,8 +169,8 @@ static const char* kDefaultIni =
     "Sound=1\r\n"
     "\r\n"
     "[Photo]\r\n"
-    "; Photo resolution in pixels (square)\r\n"
-    "Size=1024\r\n"
+    "; Photo resolution in pixels (square image area): 1024, 1536 or 2048\r\n"
+    "Resolution=1536\r\n"
     "; Your own note, written at the end of the second caption line, e.g. CAW UK\r\n"
     "Caption=\r\n"
     "; 1 = add a third line with altitude, speed and heading\r\n"
@@ -217,7 +218,7 @@ static void LoadConfig()
     g_cfg.printSeconds = IniFloat(p, L"Camera", L"PrintSeconds", 8.f);
     g_cfg.sound = GetPrivateProfileIntW(L"Camera", L"Sound", 1, p);
     g_cfg.filmPack = std::max(0, std::min(99, (int)GetPrivateProfileIntW(L"Camera", L"FilmPack", 10, p)));
-    g_cfg.photoSize = std::min(4096, std::max(256, (int)GetPrivateProfileIntW(L"Photo", L"Size", 1024, p)));
+    g_cfg.photoSize = std::min(4096, std::max(256, (int)GetPrivateProfileIntW(L"Photo", L"Resolution", 1536, p)));
     wchar_t cap[256];
     GetPrivateProfileStringW(L"Photo", L"Caption", L"", cap, 256, p);
     g_cfg.caption = cap;
@@ -357,6 +358,8 @@ struct Telemetry
     bool valid = false;
     std::string aircraft;
     std::string pilot;
+    bool hasPos = false;
+    double px = 0, pz = 0;  // DCS map metres (x north, z east)
     double lat = 0, lon = 0, altM = 0, hdgDeg = 0, iasMs = 0, missionTime = -1;
     double receivedAt = 0;
 };
@@ -411,6 +414,7 @@ static void TelemetryLoop()
         t.iasMs = atof(parts[5].c_str());
         t.missionTime = atof(parts[6].c_str());
         if (parts.size() >= 8) t.pilot = parts[7];
+        if (parts.size() >= 10) { t.px = atof(parts[8].c_str()); t.pz = atof(parts[9].c_str()); t.hasPos = true; }
         t.receivedAt = NowSeconds();
         std::lock_guard<std::mutex> lk(g_telMutex);
         g_tel = t;
@@ -436,68 +440,8 @@ static void StopTelemetry()
 // Photo writer (GDI caption + WIC PNG)
 // ---------------------------------------------------------------------------
 
-static std::wstring Widen(const std::string& s)
-{
-    if (s.empty()) return L"";
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    std::wstring w(n, 0);
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
-    if (!w.empty() && w.back() == 0) w.pop_back();
-    return w;
-}
-
-static std::wstring PrettyAircraft(const std::string& raw)
-{
-    std::wstring w = Widen(raw);
-    for (auto& c : w) if (c == L'_') c = L' ';
-    return w;
-}
-
-static std::wstring FormatLatLon(double lat, double lon)
-{
-    auto fmt = [](double v, wchar_t pos, wchar_t neg) {
-        wchar_t h = v >= 0 ? pos : neg;
-        v = fabs(v);
-        int deg = (int)v;
-        double min = (v - deg) * 60.0;
-        wchar_t b[48];
-        swprintf(b, 48, L"%lc %d°%05.2f'", h, deg, min);
-        return std::wstring(b);
-    };
-    return fmt(lat, L'N', L'S') + L"  " + fmt(lon, L'E', L'W');
-}
-
-static bool SavePng(const std::wstring& path, const uint8_t* bgra, int w, int h)
-{
-    IWICImagingFactory* fac = nullptr;
-    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&fac))))
-        return false;
-    bool ok = false;
-    IWICStream* stream = nullptr;
-    IWICBitmapEncoder* enc = nullptr;
-    IWICBitmapFrameEncode* frame = nullptr;
-    do
-    {
-        if (FAILED(fac->CreateStream(&stream))) break;
-        if (FAILED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE))) break;
-        if (FAILED(fac->CreateEncoder(GUID_ContainerFormatPng, nullptr, &enc))) break;
-        if (FAILED(enc->Initialize(stream, WICBitmapEncoderNoCache))) break;
-        if (FAILED(enc->CreateNewFrame(&frame, nullptr))) break;
-        if (FAILED(frame->Initialize(nullptr))) break;
-        if (FAILED(frame->SetSize(w, h))) break;
-        WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA;
-        if (FAILED(frame->SetPixelFormat(&fmt))) break;
-        if (FAILED(frame->WritePixels(h, w * 4, w * h * 4, const_cast<BYTE*>(bgra)))) break;
-        if (FAILED(frame->Commit())) break;
-        if (FAILED(enc->Commit())) break;
-        ok = true;
-    } while (false);
-    if (frame) frame->Release();
-    if (enc) enc->Release();
-    if (stream) stream->Release();
-    fac->Release();
-    return ok;
-}
+using card::Widen;
+using card::PrettyAircraft;
 
 // ---- caption data written by InstantCamHook.lua at mission load ----
 struct Town { std::wstring name; double lat, lon; };
@@ -546,6 +490,38 @@ static std::vector<std::wstring> Split(const std::wstring& s, wchar_t sep)
     return r;
 }
 
+static std::wstring PlaceText(const std::wstring& rawName, double distKm, double brgDeg)
+{
+    std::wstring name = rawName;
+    bool allUpper = true;
+    for (wchar_t c : name) if (iswlower(c)) { allUpper = false; break; }
+    if (allUpper) name = TitleCase(name);
+    if (distKm < 15.0) return L"Near " + name;
+    static const wchar_t* dirs[] = {L"N", L"NE", L"E", L"SE", L"S", L"SW", L"W", L"NW"};
+    wchar_t b[160];
+    swprintf(b, 160, L"%.0f nm %ls of %ls", distKm / 1.852, dirs[(int)((brgDeg + 22.5) / 45.0) % 8], name.c_str());
+    return b;
+}
+
+// Airfields of the current map in DCS metres, written by InstantCamHook.lua
+static std::wstring NearestAirfield(double x, double z)
+{
+    auto lines = ReadLines(g_dataDir + L"\\airfields.txt");
+    double best = 1e18, bx = 0, bz = 0;
+    std::wstring bn;
+    for (auto& l : lines)
+    {
+        auto p = Split(l, L'|');
+        if (p.size() < 3 || p[0].empty()) continue;
+        double ax = _wtof(p[1].c_str()), az = _wtof(p[2].c_str());
+        double d = (ax - x) * (ax - x) + (az - z) * (az - z);
+        if (d < best) { best = d; bx = ax; bz = az; bn = p[0]; }
+    }
+    if (bn.empty()) return L"";
+    double brg = fmod(atan2(z - bz, x - bx) * 180.0 / 3.14159265358979 + 360.0, 360.0);
+    return PlaceText(bn, sqrt(best) / 1000.0, brg);
+}
+
 static std::wstring NearestPlace(double lat, double lon)
 {
     auto lines = ReadLines(g_dataDir + L"\\towns.txt");
@@ -563,19 +539,10 @@ static std::wstring NearestPlace(double lat, double lon)
         if (d < best) { best = d; bt = {p[0], tl, tn}; }
     }
     if (bt.name.empty()) return L"";
-    std::wstring name = bt.name;
-    bool allUpper = true;
-    for (wchar_t c : name) if (iswlower(c)) { allUpper = false; break; }
-    if (allUpper) name = TitleCase(name);
-    if (best < 25.0) return L"Near " + name;
-    // "34 nm NE of Banak"
     double y = sin((lon - bt.lon) * d2r) * cos(lat * d2r);
     double x = cos(bt.lat * d2r) * sin(lat * d2r) - sin(bt.lat * d2r) * cos(lat * d2r) * cos((lon - bt.lon) * d2r);
     double brg = fmod(atan2(y, x) / d2r + 360.0, 360.0);
-    static const wchar_t* dirs[] = {L"N", L"NE", L"E", L"SE", L"S", L"SW", L"W", L"NW"};
-    wchar_t b[160];
-    swprintf(b, 160, L"%.0f nm %ls of %ls", best / 1.852, dirs[(int)((brg + 22.5) / 45.0) % 8], name.c_str());
-    return b;
+    return PlaceText(bt.name, best, brg);
 }
 
 // Mission date (from mission.txt) advanced by the mission clock.
@@ -601,104 +568,14 @@ static bool MissionDateTime(double missionTime, SYSTEMTIME& out)
     return FileTimeToSystemTime(&ft, &out) != 0;
 }
 
-// ---- paper card + handwriting font ----
-static std::mutex g_paperMutex;
-static std::vector<uint8_t> g_paper;  // BGRA
-static UINT g_paperW = 0, g_paperH = 0;
-static bool g_fontLoaded = false;
-
-static bool LoadPngBGRA(const std::wstring& path, std::vector<uint8_t>& px, UINT& w, UINT& h)
-{
-    IWICImagingFactory* fac = nullptr;
-    IWICBitmapDecoder* dec = nullptr;
-    IWICBitmapFrameDecode* frame = nullptr;
-    IWICFormatConverter* conv = nullptr;
-    bool ok = false;
-    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&fac))) &&
-        SUCCEEDED(fac->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec)) &&
-        SUCCEEDED(dec->GetFrame(0, &frame)) && SUCCEEDED(fac->CreateFormatConverter(&conv)) &&
-        SUCCEEDED(conv->Initialize(frame, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0,
-                                   WICBitmapPaletteTypeCustom)) &&
-        SUCCEEDED(conv->GetSize(&w, &h)))
-    {
-        px.resize((size_t)w * h * 4);
-        ok = SUCCEEDED(conv->CopyPixels(nullptr, w * 4, (UINT)px.size(), px.data()));
-    }
-    if (conv) conv->Release();
-    if (frame) frame->Release();
-    if (dec) dec->Release();
-    if (fac) fac->Release();
-    return ok;
-}
-
 // The finished card is handed back to the render thread so the print you see matches the saved photo.
 static std::mutex g_cardMutex;
 static std::vector<uint8_t> g_cardPixels;  // BGRA
 static int g_cardW = 0, g_cardH = 0;
 static uint64_t g_cardSerial = 0;
 
-static void WritePhoto(std::vector<uint8_t> rgba, int size, Telemetry tel, SYSTEMTIME st)
+static std::vector<std::wstring> CaptionLines(const Telemetry& tel, const SYSTEMTIME& st)
 {
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-
-    // Instant film proportions: 88 x 107 mm card, 79 x 79 mm image
-    const int W = (int)lround(size * 88.0 / 79.0);
-    const int H = (int)lround(size * 107.0 / 79.0);
-    const int ox = (int)lround(size * 4.5 / 79.0);
-    const int oy = (int)lround(size * 6.0 / 79.0);
-
-    {
-        std::lock_guard<std::mutex> lk(g_paperMutex);
-        if (g_paper.empty()) LoadPngBGRA(g_installDir + L"\\paper.png", g_paper, g_paperW, g_paperH);
-        if (!g_fontLoaded)
-        {
-            int n = AddFontResourceExW((g_installDir + L"\\ShadowsIntoLight.ttf").c_str(), FR_PRIVATE, nullptr);
-            g_fontLoaded = true;
-            Log("Handwriting font %s", n > 0 ? "loaded" : "not found (using Segoe Print)");
-        }
-    }
-
-    BITMAPINFO bi{};
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = W;
-    bi.bmiHeader.biHeight = -H;  // top-down
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-    void* bits = nullptr;
-    HDC dc = CreateCompatibleDC(nullptr);
-    HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!bmp) { DeleteDC(dc); CoUninitialize(); return; }
-    HGDIOBJ oldBmp = SelectObject(dc, bmp);
-    uint8_t* px = (uint8_t*)bits;
-
-    // paper (worn card art, scaled if the photo size differs), or plain paper
-    if (!g_paper.empty())
-    {
-        for (int y = 0; y < H; ++y)
-        {
-            int sy = std::min((int)g_paperH - 1, (int)((y + 0.5) * g_paperH / H));
-            for (int x = 0; x < W; ++x)
-            {
-                int sx = std::min((int)g_paperW - 1, (int)((x + 0.5) * g_paperW / W));
-                memcpy(px + (y * W + x) * 4, &g_paper[((size_t)sy * g_paperW + sx) * 4], 4);
-            }
-        }
-    }
-    else
-    {
-        for (int i = 0; i < W * H; ++i) { px[i * 4] = 227; px[i * 4 + 1] = 234; px[i * 4 + 2] = 236; px[i * 4 + 3] = 255; }
-    }
-    // photo
-    for (int y = 0; y < size; ++y)
-        for (int x = 0; x < size; ++x)
-        {
-            const uint8_t* s = &rgba[(y * size + x) * 4];
-            uint8_t* d = px + ((y + oy) * W + (x + ox)) * 4;
-            d[0] = s[2]; d[1] = s[1]; d[2] = s[0]; d[3] = 255;
-        }
-
-    // ---- handwritten caption, like the marker notes on a real print ----
     static const wchar_t* months[] = {L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
                                       L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
     SYSTEMTIME when = st;
@@ -712,8 +589,9 @@ static void WritePhoto(std::vector<uint8_t> rgba, int size, Telemetry tel, SYSTE
     wchar_t date[64];
     swprintf(date, 64, L"%d %ls %04d, %02d:%02d", when.wDay, months[(when.wMonth + 11) % 12], when.wYear, when.wHour,
              when.wMinute);
-
-    std::wstring place = tel.valid ? NearestPlace(tel.lat, tel.lon) : L"";
+    std::wstring place;
+    if (tel.valid && tel.hasPos) place = NearestAirfield(tel.px, tel.pz);
+    if (place.empty() && tel.valid) place = NearestPlace(tel.lat, tel.lon);
     std::wstring line1 = place.empty() ? std::wstring(date) : place + L" - " + date;
 
     std::vector<std::wstring> parts2;
@@ -733,60 +611,39 @@ static void WritePhoto(std::vector<uint8_t> rgba, int size, Telemetry tel, SYSTE
         swprintf(b, 160, L"%ld ft | %ld kt | hdg %03d", ft, kt, hdg);
         line3 = b;
     }
+    return {line1, line2, line3};
+}
 
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(34, 44, 128));
-    int fh = (int)(size * 0.058);
-    HFONT f1 = CreateFontW(-fh, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0,
-                           L"Shadows Into Light");
-    HGDIOBJ oldF = SelectObject(dc, f1);
-    wchar_t face[64] = {0};
-    GetTextFaceW(dc, 64, face);
-    if (wcscmp(face, L"Shadows Into Light") != 0)
+static void WritePhoto(std::vector<uint8_t> rgba, int size, Telemetry tel, SYSTEMTIME st)
+{
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    auto lines = CaptionLines(tel, st);
+    std::vector<uint8_t> px;
+    int W = 0, H = 0;
+    if (!card::Compose(rgba.data(), size, (size_t)size * 4, false, lines, g_installDir, px, W, H))
     {
-        SelectObject(dc, oldF);
-        DeleteObject(f1);
-        f1 = CreateFontW(-(int)(fh * 0.8), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0,
-                         L"Segoe Print");
-        SelectObject(dc, f1);
+        Log("Photo compose failed");
+        CoUninitialize();
+        return;
     }
-    int x0 = ox + (int)(size * 0.035);
-    int y = oy + size + (int)(size * 0.045);
-    int lineH = (int)(fh * 1.32);
-    for (const std::wstring* ln : {&line1, &line2, &line3})
-    {
-        if (ln->empty()) continue;
-        RECT r{x0, y, W - ox, y + lineH};
-        DrawTextW(dc, ln->c_str(), -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-        y += lineH;
-    }
-    SelectObject(dc, oldF);
-    DeleteObject(f1);
-    GdiFlush();
-    for (int i = 0; i < W * H; ++i) px[i * 4 + 3] = 255;  // GDI clears alpha
+    while (!lines.empty() && lines.back().empty()) lines.pop_back();
+    std::wstring caption = card::JoinLines(lines);
 
     wchar_t name[96];
     swprintf(name, 96, L"IC_%04d%02d%02d_%02d%02d%02d_%03d.png", st.wYear, st.wMonth, st.wDay, st.wHour,
              st.wMinute, st.wSecond, st.wMilliseconds);
     std::wstring path = g_dataDir + L"\\Photos\\" + name;
-    bool ok = SavePng(path, px, W, H);
-    std::wstring tmp = g_dataDir + L"\\Latest.tmp.png";
-    std::wstring latest = g_dataDir + L"\\Latest.png";
-    if (ok && SavePng(tmp, px, W, H))
-        MoveFileExW(tmp.c_str(), latest.c_str(), MOVEFILE_REPLACE_EXISTING);
-    Log("Photo %ls %s", name, ok ? "saved" : "FAILED");
+    bool ok = card::SavePng(path, px.data(), W, H, caption);
+    if (ok) card::SavePng(g_dataDir + L"\\Latest.png", px.data(), W, H, caption);
+    Log("Photo %ls %dx%d %s", name, W, H, ok ? "saved" : "FAILED");
 
     {
         std::lock_guard<std::mutex> lk(g_cardMutex);
-        g_cardPixels.assign(px, px + (size_t)W * H * 4);
+        g_cardPixels = std::move(px);
         g_cardW = W;
         g_cardH = H;
         g_cardSerial++;
     }
-
-    SelectObject(dc, oldBmp);
-    DeleteObject(bmp);
-    DeleteDC(dc);
     CoUninitialize();
 }
 
@@ -1065,7 +922,20 @@ struct Renderer
         dsd.StencilEnable = FALSE;
         dev->CreateDepthStencilState(&dsd, &dss);
 
-        capSize = g_cfg.photoSize;
+        if (!CreateCapture(g_cfg.photoSize)) return false;
+        LoadBody();
+        ok = capRtv && capSrv;
+        Log("Renderer ready (feature level %x)", (unsigned)fl);
+        return ok;
+    }
+
+    bool CreateCapture(int size)
+    {
+        if (capRtv) { capRtv->Release(); capRtv = nullptr; }
+        if (capSrv) { capSrv->Release(); capSrv = nullptr; }
+        if (capTex) { capTex->Release(); capTex = nullptr; }
+        if (staging) { staging->Release(); staging = nullptr; }
+        capSize = size;
         D3D11_TEXTURE2D_DESC td{};
         td.Width = td.Height = capSize;
         td.MipLevels = 1;
@@ -1081,17 +951,13 @@ struct Renderer
         td.BindFlags = 0;
         td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         if (FAILED(dev->CreateTexture2D(&td, nullptr, &staging))) return false;
-
-        // clear capture texture so the first print isn't garbage
         if (capRtv)
         {
             float black[4] = {0, 0, 0, 1};
             ctx->ClearRenderTargetView(capRtv, black);
         }
-        LoadBody();
-        ok = capRtv && capSrv;
-        Log("Renderer ready (feature level %x)", (unsigned)fl);
-        return ok;
+        Log("Photo resolution %d", capSize);
+        return capRtv && capSrv;
     }
 
     bool CreateQuad(XrSession s, QuadTarget& q, uint32_t w, uint32_t h)
@@ -1381,10 +1247,13 @@ static bool TryShutter(int shots, bool raised, const CBData& cb, ID3D11ShaderRes
         return false;
     }
     if (g_cam.readbackIn >= 0) return false;
+    if (g_cfg.photoSize != g_r.capSize && !g_r.CreateCapture(g_cfg.photoSize)) return false;
     if (g_cfg.filmPack > 0) g_cam.shotsLeft--;
     CBData c = cb;
     c.p0[3] = 1;
     c.p3[0] = 1;
+    c.p3[2] = 1;                    // high-quality sampling (bicubic + supersampling)
+    c.p3[3] = (float)g_r.capSize;
     g_r.Draw(g_r.capRtv, g_r.capSize, g_r.capSize, c, eyeSrv, focusSrv, nullptr);
     g_r.ctx->CopyResource(g_r.staging, g_r.capTex);
     g_cam.readbackIn = 2;
@@ -1412,6 +1281,27 @@ static FrameInput PollInput()
     fi.dt = g_cam.lastTime > 0 ? std::min(0.1, fi.now - g_cam.lastTime) : 0.0;
     g_cam.lastTime = fi.now;
     fi.fg = IsOurProcessForeground();
+    {
+        // settings changed (tray app or editor)? reload them
+        static double lastCheck = 0;
+        static FILETIME lastWrite{};
+        if (fi.now - lastCheck > 2.0)
+        {
+            lastCheck = fi.now;
+            WIN32_FILE_ATTRIBUTE_DATA fa;
+            if (GetFileAttributesExW((g_dataDir + L"\\InstantCam.ini").c_str(), GetFileExInfoStandard, &fa))
+            {
+                if ((lastWrite.dwLowDateTime || lastWrite.dwHighDateTime) && CompareFileTime(&fa.ftLastWriteTime, &lastWrite) != 0)
+                {
+                    LoadConfig();
+                    if (g_cfg.filmPack == 0) g_cam.shotsLeft = 0;
+                    else if (g_cam.shotsLeft > g_cfg.filmPack || g_cam.shotsLeft <= 0) g_cam.shotsLeft = g_cfg.filmPack;
+                    Log("Settings reloaded");
+                }
+                lastWrite = fa.ftLastWriteTime;
+            }
+        }
+    }
     if (g_cam.kRaise.Pressed(g_cfg.keyRaise, fi.fg)) g_in.raised = !g_in.raised;
     if (g_cam.kShutter.Pressed(g_cfg.keyShutter, fi.fg) && g_in.raised) g_in.shutter++;
     if (g_cam.kRecenter.Pressed(g_cfg.keyRecenter, fi.fg) && g_in.raised) g_in.recenter++;

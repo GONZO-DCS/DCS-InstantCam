@@ -4,20 +4,25 @@ Unicode true
 !include "x64.nsh"
 
 !define APPNAME "DCS Instant Cam"
-!define APPVER "1.3.0"
+!define APPVER "1.4.2"
 !define REGLAYERS "SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCSInstantCam"
 
 Name "${APPNAME} ${APPVER}"
-OutFile "dist/DCS_InstantCam_Setup_v1.3.exe"
+OutFile "dist/DCS_InstantCam_Setup_v1.4.2.exe"
 InstallDir "$PROGRAMFILES64\DCS Instant Cam"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "res\instantcam.ico"
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_TEXT "Start DCS Instant Cam (tray menu)"
+!define MUI_FINISHPAGE_RUN_FUNCTION StartTray
 !define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.txt"
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "Open the quick guide"
 !insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -25,11 +30,29 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Install"
+Function StartTray
+  ; start un-elevated, as the normal user
+  Exec '"$WINDIR\explorer.exe" "$INSTDIR\InstantCam.exe"'
+FunctionEnd
+
+Section "!DCS Instant Cam (required)" SecMain
+  SectionIn RO
   SetRegView 64
   SetOutPath "$INSTDIR"
+  ; close the tray app and make sure DCS isn't holding the camera DLL
+  nsExec::Exec 'taskkill /f /im InstantCam.exe'
+  Sleep 300
+  retry_dll:
+  ClearErrors
+  IfFileExists "$INSTDIR\instantcam.dll" 0 dll_free
+  Delete "$INSTDIR\instantcam.dll"
+  IfErrors 0 dll_free
+  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "DCS is still running. Close DCS, then click Retry." IDRETRY retry_dll
+  Abort
+  dll_free:
   Delete "$INSTDIR\XR_APILAYER_instantcam.dll" ; old name (v1.0/v1.1)
   File "pkg\instantcam.dll"
+  File "pkg\InstantCam.exe"
   File "pkg\XR_APILAYER_instantcam.json"
   File "pkg\shutter.wav"
   File "pkg\empty.wav"
@@ -58,14 +81,30 @@ Section "Install"
   WriteRegDWORD HKLM "${UNINSTKEY}" "NoRepair" 1
 
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\DCS Instant Cam.lnk" "$INSTDIR\InstantCam.exe"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\Edit photo captions.lnk" "$INSTDIR\InstantCam.exe" "/edit"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Quick guide.lnk" "$INSTDIR\README.txt"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Photos.lnk" "$PROFILE\Saved Games\InstantCam\Photos"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
   CreateDirectory "$PROFILE\Saved Games\InstantCam\Photos"
 SectionEnd
 
+Section "Desktop shortcut" SecDesktop
+  ; starts the tray app, or opens the caption editor if it's already running
+  CreateShortcut "$DESKTOP\DCS Instant Cam.lnk" "$INSTDIR\InstantCam.exe" "" "$INSTDIR\InstantCam.exe" 0
+SectionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "The camera, the tray menu and the caption editor."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Puts a DCS Instant Cam icon on your desktop. It starts the tray menu, or opens the caption editor if it's already running."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
 Section "Uninstall"
   SetRegView 64
+  nsExec::Exec 'taskkill /f /im InstantCam.exe'
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "DCS Instant Cam"
+  Delete "$INSTDIR\InstantCam.exe"
+  Delete "$DESKTOP\DCS Instant Cam.lnk"
   DeleteRegValue HKLM "${REGLAYERS}" "$INSTDIR\XR_APILAYER_instantcam.json"
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\export_setup.ps1" -Mode uninstall'
   Delete "$INSTDIR\instantcam.dll"

@@ -30,9 +30,11 @@ local function ic_frame()
     local ias = LoGetIndicatedAirSpeed and LoGetIndicatedAirSpeed() or 0
     local pilot = LoGetPilotName and LoGetPilotName() or ""
     pilot = string.gsub(tostring(pilot or ""), "|", "/")
-    local msg = string.format("IC1|%s|%.6f|%.6f|%.1f|%.1f|%.1f|%.0f|%s",
+    local pos = me.Position or {}
+    local msg = string.format("IC1|%s|%.6f|%.6f|%.1f|%.1f|%.1f|%.0f|%s|%.1f|%.1f",
         tostring(me.Name or ""), me.LatLongAlt.Lat or 0, me.LatLongAlt.Long or 0,
-        me.LatLongAlt.Alt or 0, math.deg(me.Heading or 0), ias or 0, mtime, pilot)
+        me.LatLongAlt.Alt or 0, math.deg(me.Heading or 0), ias or 0, mtime, pilot,
+        pos.x or 0, pos.z or 0)
     ic.udp:sendto(msg, "127.0.0.1", IC_PORT)
 end
 

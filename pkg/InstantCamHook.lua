@@ -26,7 +26,28 @@ local function writeMissionInfo()
             m.mission.start_time or 0))
         f:close()
     end
-    -- towns of the current map, for "Near <town>" captions
+    -- airfields of the current map (DCS metres), for "Near <airfield>" captions
+    local okT, Terrain = pcall(require, "terrain")
+    if okT and type(Terrain) == "table" and Terrain.GetTerrainConfig then
+        local okA, ads = pcall(Terrain.GetTerrainConfig, "Airdromes")
+        if okA and type(ads) == "table" then
+            local out = io.open(dir .. "airfields.txt", "w")
+            if out then
+                for id, a in pairs(ads) do
+                    if type(a) == "table" and type(a.reference_point) == "table" and a.abandoned ~= true then
+                        local name = a.display_name
+                        if type(name) ~= "string" and type(a.names) == "table" then name = a.names.en or a.names["en"] end
+                        if type(name) ~= "string" then name = a.name end
+                        if type(name) ~= "string" then name = a.code or a.id or tostring(id) end
+                        name = string.gsub(tostring(name), "|", "/")
+                        out:write(string.format("%s|%.1f|%.1f\n", name, a.reference_point.x or 0, a.reference_point.y or 0))
+                    end
+                end
+                out:close()
+            end
+        end
+    end
+    -- towns of the current map (older maps with readable towns.lua)
     local folder = theatre
     if folder == "SinaiMap" then folder = "Sinai" end
     local root = lfs.currentdir()
@@ -56,4 +77,5 @@ end
 
 DCS.setUserCallbacks({
     onMissionLoadEnd = function() pcall(writeMissionInfo) end,
+    onSimulationStart = function() pcall(writeMissionInfo) end,
 })

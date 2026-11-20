@@ -86,6 +86,37 @@ float3 noiseCol(float2 s)
     return float3(n, n, n) * 0.05;
 }
 
+// Catmull-Rom bicubic sample (9 bilinear taps) - sharper and less blocky when zoomed in.
+float3 sampleBicubic(Texture2DArray t, float2 uv, float slice)
+{
+    uint w, hgt, n;
+    t.GetDimensions(w, hgt, n);
+    float2 ts = float2(w, hgt);
+    float2 sp = uv * ts;
+    float2 tp1 = floor(sp - 0.5) + 0.5;
+    float2 f = sp - tp1;
+    float2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    float2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    float2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    float2 w3 = f * f * (-0.5 + 0.5 * f);
+    float2 w12 = w1 + w2;
+    float2 o12 = w2 / w12;
+    float2 t0 = (tp1 - 1.0) / ts;
+    float2 t3 = (tp1 + 2.0) / ts;
+    float2 t12 = (tp1 + o12) / ts;
+    float3 r = 0;
+    r += t.SampleLevel(samp, float3(t0.x, t0.y, slice), 0).rgb * w0.x * w0.y;
+    r += t.SampleLevel(samp, float3(t12.x, t0.y, slice), 0).rgb * w12.x * w0.y;
+    r += t.SampleLevel(samp, float3(t3.x, t0.y, slice), 0).rgb * w3.x * w0.y;
+    r += t.SampleLevel(samp, float3(t0.x, t12.y, slice), 0).rgb * w0.x * w12.y;
+    r += t.SampleLevel(samp, float3(t12.x, t12.y, slice), 0).rgb * w12.x * w12.y;
+    r += t.SampleLevel(samp, float3(t3.x, t12.y, slice), 0).rgb * w3.x * w12.y;
+    r += t.SampleLevel(samp, float3(t0.x, t3.y, slice), 0).rgb * w0.x * w3.y;
+    r += t.SampleLevel(samp, float3(t12.x, t3.y, slice), 0).rgb * w12.x * w3.y;
+    r += t.SampleLevel(samp, float3(t3.x, t3.y, slice), 0).rgb * w3.x * w3.y;
+    return max(r, 0.0);
+}
+
 // Project a lens ray into one DCS eye image. Returns false if outside.
 bool projectEye(float3 d, float4 tans, float4 rect, out float2 tuv)
 {
@@ -114,7 +145,7 @@ float3 sampleLens(float2 s)
             float2 rel = (tuv - eyeRect2.xy) / eyeRect2.zw;
             if (all(rel > 0.02) && all(rel < 0.98))
             {
-                float3 c2 = focusTex.SampleLevel(samp, float3(tuv, p1b.x), 0).rgb;
+                float3 c2 = (p3.z > 0.5) ? sampleBicubic(focusTex, tuv, p1b.x) : focusTex.SampleLevel(samp, float3(tuv, p1b.x), 0).rgb;
                 if (p1b.y < 0.5) c2 = toLinear(c2);
                 return c2;
             }
@@ -123,7 +154,7 @@ float3 sampleLens(float2 s)
     if (p1.w < 0.5) return noiseCol(s);
     float3 d = cFwd.xyz + s.x * th * cRight.xyz + s.y * th * cUp.xyz;
     if (!projectEye(d, eyeTan, eyeRect, tuv)) return noiseCol(s);
-    float3 c = eyeTex.SampleLevel(samp, float3(tuv, p1.x), 0).rgb;
+    float3 c = (p3.z > 0.5) ? sampleBicubic(eyeTex, tuv, p1.x) : eyeTex.SampleLevel(samp, float3(tuv, p1.x), 0).rgb;
     if (p1.y < 0.5) c = toLinear(c);
     return c;
 }
@@ -134,10 +165,14 @@ float3 instantFilm(float2 uv)
 {
     float2 s = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     float r = length(s);
-    float b = 0.004 + smoothstep(0.3, 1.3, r) * 0.016;
-    float3 c = sampleLens(s) * 0.36
+    float b = 0.002 + smoothstep(0.35, 1.3, r) * 0.014;
+    // 4 sub-pixel samples for the centre tap (anti-aliased when the source is larger than the photo)
+    float px = 2.0 / max(p3.w, 256.0);
+    float3 ctr = (sampleLens(s + float2(-0.25, -0.25) * px) + sampleLens(s + float2(0.25, -0.25) * px) +
+                  sampleLens(s + float2(-0.25, 0.25) * px) + sampleLens(s + float2(0.25, 0.25) * px)) * 0.25;
+    float3 c = ctr * 0.52
              + (sampleLens(s + float2(b, 0)) + sampleLens(s - float2(b, 0)) +
-                sampleLens(s + float2(0, b)) + sampleLens(s - float2(0, b))) * 0.16;
+                sampleLens(s + float2(0, b)) + sampleLens(s - float2(0, b))) * 0.12;
     float3 g = pow(max(c, 0.0), 1.0 / 2.2);
     g = lerp(g, g * g * (3.0 - 2.0 * g), 0.30);           // gentle S-curve
     g = g * 0.86 + 0.055;                                  // lifted blacks, soft highlights

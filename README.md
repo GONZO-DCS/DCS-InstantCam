@@ -4,9 +4,6 @@ A handheld instant camera for **every aircraft in DCS World** – in VR and on a
 Raise the camera, aim it with the mouse, zoom, take the shot and watch the print slide out and develop,
 complete with handwritten notes on where and when it was taken.
 
-
-This is an independent mod and contains no one else code or assets.
-
 | The camera | A saved print | Flat screen |
 |---|---|---|
 | ![Camera](docs/images/camera.png) | ![Print](docs/images/sample-print.png) | ![Flat screen](docs/images/flat-screen.png) |
@@ -18,12 +15,13 @@ This is an independent mod and contains no one else code or assets.
 - VR (OpenXR) and flat screen (DirectX 11)
 - Retro camera with live screen, zoom 24–200 mm, focal-length LCD and a 10-shot film counter
 - Instant-film look on a worn paper card, with handwritten captions:
-  `Near Banak – 31 Mar 2004, 07:47` / `Pilot Gonzo | FA-18C hornet | your note`
+  `Near Incirlik – 20 Jun 2000, 18:34` / `Pilot Gonzo | F/A-18C Hornet | your note`
+- Edit captions after the mission from the tray menu
 - Photos saved as PNG – ready for an OpenKneeboard tab
 
 ## Install
-1. Download `DCS_InstantCam_Setup_v1.3.exe` from the [Releases](../../releases) page.
-2. Run it. Windows may say "Windows protected your PC" because the installer isn't code-signed: click **More info → Run anyway**.
+1. Download `DCS_InstantCam_Setup_v1.4.2.exe` from the [Releases](../../releases) page.
+2. Run it (close DCS first). On the Components page, tick **Desktop shortcut** if you want an icon on your desktop. Windows may say "Windows protected your PC" because the installer isn't code-signed: click **More info → Run anyway**.
 3. Start DCS and press **Mouse 4** in the cockpit.
 
 To uninstall use *Settings → Apps → DCS Instant Cam*. Your photos are kept.
@@ -40,6 +38,11 @@ To uninstall use *Settings → Apps → DCS Instant Cam*. Your photos are kept.
 
 While the camera is up, DCS doesn't receive the mouse. Keyboard/HOTAS bindings and all other options are in
 `Saved Games\InstantCam\InstantCam.ini`.
+
+## Tray menu and caption editor
+DCS Instant Cam runs in the tray (camera icon by the clock). Right-click it for the photos folder, quick settings,
+photo resolution, your note for new photos and **Edit photo captions** – change the handwritten lines on any photo
+after the mission, with a live preview.
 
 ## Where things go
 - Photos: `Saved Games\InstantCam\Photos\` (newest also as `Saved Games\InstantCam\Latest.png`)
@@ -68,7 +71,6 @@ The installer is written to `dist/`. GitHub Actions builds it on every push and 
 
 ## Credits
 - Handwriting font: *Shadows Into Light* by Kimberly Geswein (SIL Open Font License)
-
 
 ## License
 MIT – see [LICENSE](LICENSE).
